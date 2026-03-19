@@ -1,5 +1,6 @@
 import sys
 import struct
+import os
 
 import numpy as np
 import txform
@@ -83,16 +84,25 @@ if __name__ == '__main__':
     
     # Parameters
     
-    seed = 1234
-    batchsize = 32
-    lr = 0.001
-    niter = 500000
-    window = 2
-    dt = 1.0 / 60.0
+    seed = int(os.getenv('LMM_SEED', '1234'))
+    batchsize = int(os.getenv('LMM_BATCHSIZE', '32'))
+    lr = float(os.getenv('LMM_LR', '0.001'))
+    niter = int(os.getenv('LMM_NITER', os.getenv('LMM_DECOMP_NITER', '500000')))
+    window = int(os.getenv('LMM_WINDOW', '2'))
+    dt = float(os.getenv('LMM_DT', str(1.0 / 60.0)))
+    nthreads = int(os.getenv('LMM_TORCH_THREADS', '1'))
+    save_every = int(os.getenv('LMM_SAVE_EVERY', '1000'))
+    device_name = os.getenv('LMM_DEVICE', 'cpu')
+    device = torch.device(device_name if (device_name.startswith('cuda') and torch.cuda.is_available()) else 'cpu')
     
     np.random.seed(seed)
     torch.manual_seed(seed)
-    torch.set_num_threads(1)
+    torch.set_num_threads(nthreads)
+    print('Device:', device)
+
+    os.makedirs('./Database', exist_ok=True)
+    os.makedirs('./Models', exist_ok=True)
+    os.makedirs('./Misc', exist_ok=True)
     
     # Compute world space
     
@@ -148,7 +158,7 @@ if __name__ == '__main__':
         Yrvel.mean(axis=0).ravel(),
         Yrang.mean(axis=0).ravel(),
         Yextra.mean(axis=0).ravel(),
-    ]).astype(np.float32))
+    ]).astype(np.float32), device=device)
     
     decompressor_std_out = torch.as_tensor(np.hstack([
         Ypos[:,1:].std(axis=0).ravel(),
@@ -158,10 +168,10 @@ if __name__ == '__main__':
         Yrvel.std(axis=0).ravel(),
         Yrang.std(axis=0).ravel(),
         Yextra.std(axis=0).ravel(),
-    ]).astype(np.float32))
+    ]).astype(np.float32), device=device)
     
-    decompressor_mean_in = torch.zeros([nfeatures + nlatent], dtype=torch.float32)
-    decompressor_std_in = torch.ones([nfeatures + nlatent], dtype=torch.float32)
+    decompressor_mean_in = torch.zeros([nfeatures + nlatent], dtype=torch.float32, device=device)
+    decompressor_std_in = torch.ones([nfeatures + nlatent], dtype=torch.float32, device=device)
     
     compressor_mean_in = torch.as_tensor(np.hstack([
         Ypos[:,1:].mean(axis=0).ravel(),
@@ -175,7 +185,7 @@ if __name__ == '__main__':
         Yrvel.mean(axis=0).ravel(),
         Yrang.mean(axis=0).ravel(),
         Yextra.mean(axis=0).ravel(),
-    ]).astype(np.float32))
+    ]).astype(np.float32), device=device)
     
     compressor_std_in = torch.as_tensor(np.hstack([
         Ypos_scale.repeat((nbones-1)*3),
@@ -189,33 +199,33 @@ if __name__ == '__main__':
         Yrvel_scale.repeat(3),
         Yrang_scale.repeat(3),
         Yextra_scale.repeat(nextra),
-    ]).astype(np.float32))
+    ]).astype(np.float32), device=device)
     
     # Make PyTorch tensors
     
-    Ypos = torch.as_tensor(Ypos)
-    Yrot = torch.as_tensor(Yrot)
-    Ytxy = torch.as_tensor(Ytxy)
-    Yvel = torch.as_tensor(Yvel)
-    Yang = torch.as_tensor(Yang)
+    Ypos = torch.as_tensor(Ypos, device=device)
+    Yrot = torch.as_tensor(Yrot, device=device)
+    Ytxy = torch.as_tensor(Ytxy, device=device)
+    Yvel = torch.as_tensor(Yvel, device=device)
+    Yang = torch.as_tensor(Yang, device=device)
     
-    Qpos = torch.as_tensor(Qpos)
-    Qrot = torch.as_tensor(Qrot)
-    Qxfm = torch.as_tensor(Qxfm)
-    Qtxy = torch.as_tensor(Qtxy)
-    Qvel = torch.as_tensor(Qvel)
-    Qang = torch.as_tensor(Qang)
+    Qpos = torch.as_tensor(Qpos, device=device)
+    Qrot = torch.as_tensor(Qrot, device=device)
+    Qxfm = torch.as_tensor(Qxfm, device=device)
+    Qtxy = torch.as_tensor(Qtxy, device=device)
+    Qvel = torch.as_tensor(Qvel, device=device)
+    Qang = torch.as_tensor(Qang, device=device)
     
-    Yrvel = torch.as_tensor(Yrvel)
-    Yrang = torch.as_tensor(Yrang)
-    Yextra = torch.as_tensor(Yextra)
+    Yrvel = torch.as_tensor(Yrvel, device=device)
+    Yrang = torch.as_tensor(Yrang, device=device)
+    Yextra = torch.as_tensor(Yextra, device=device)
     
-    X = torch.as_tensor(X)
+    X = torch.as_tensor(X, device=device)
     
     # Make networks
     
-    network_compressor = Compressor(len(compressor_mean_in), nlatent)
-    network_decompressor = Decompressor(nfeatures + nlatent, len(decompressor_mean_out))
+    network_compressor = Compressor(len(compressor_mean_in), nlatent).to(device)
+    network_decompressor = Decompressor(nfeatures + nlatent, len(decompressor_mean_out)).to(device)
     print("Input size: ", nfeatures + nlatent)
     print("Output size: ", len(decompressor_mean_out))
     # Function to save compressed database
@@ -384,7 +394,7 @@ if __name__ == '__main__':
     indices = []
     for i in range(nframes - window):
         indices.append(np.arange(i, i + window))
-    indices = torch.as_tensor(np.array(indices), dtype=torch.long)
+    indices = torch.as_tensor(np.array(indices), dtype=torch.long, device=device)
     
     # Train
 
@@ -549,10 +559,10 @@ if __name__ == '__main__':
         if i % 10 == 0:
             sys.stdout.write('\rIter: %7i Loss: %5.3f' % (i, rolling_loss))
         
-        if i % 1000 == 0:
+        if save_every > 0 and i % save_every == 0:
             generate_animation()
             save_compressed_database()
-            save_onnx_network('./Models/decompressor.onnx', network_decompressor, decompressor_mean_in, decompressor_std_in, decompressor_mean_out, decompressor_std_out, torch.randn(1,1,nfeatures + nlatent))
-        if i % 1000 == 0:
+            save_onnx_network('./Models/decompressor.onnx', network_decompressor, decompressor_mean_in, decompressor_std_in, decompressor_mean_out, decompressor_std_out, torch.randn(1,1,nfeatures + nlatent, device=device))
+        if save_every > 0 and i % save_every == 0:
             scheduler.step()
             

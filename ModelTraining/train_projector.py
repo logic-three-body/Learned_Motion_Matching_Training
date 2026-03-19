@@ -1,4 +1,5 @@
 import sys
+import os
 
 import numpy as np
 
@@ -52,14 +53,22 @@ if __name__ == '__main__':
     
     # Parameters
     
-    seed = 1234
-    batchsize = 32
-    lr = 0.001
-    niter = 500000
+    seed = int(os.getenv('LMM_SEED', '1234'))
+    batchsize = int(os.getenv('LMM_BATCHSIZE', '32'))
+    lr = float(os.getenv('LMM_LR', '0.001'))
+    niter = int(os.getenv('LMM_NITER', os.getenv('LMM_PROJECTOR_NITER', '500000')))
+    nthreads = int(os.getenv('LMM_TORCH_THREADS', '1'))
+    save_every = int(os.getenv('LMM_SAVE_EVERY', '1000'))
+    device_name = os.getenv('LMM_DEVICE', 'cpu')
+    device = torch.device(device_name if (device_name.startswith('cuda') and torch.cuda.is_available()) else 'cpu')
     
     np.random.seed(seed)
     torch.manual_seed(seed)
-    torch.set_num_threads(1)
+    torch.set_num_threads(nthreads)
+    print('Device:', device)
+
+    os.makedirs('./Models', exist_ok=True)
+    os.makedirs('./Misc', exist_ok=True)
     
     # Fit acceleration structure for nearest neighbors search
     
@@ -73,24 +82,24 @@ if __name__ == '__main__':
     projector_mean_out = torch.as_tensor(np.hstack([
         X.mean(axis=0).ravel(),
         Z.mean(axis=0).ravel(),
-    ]).astype(np.float32))
+    ]).astype(np.float32), device=device)
     
     projector_std_out = torch.as_tensor(np.hstack([
         X.std(axis=0).ravel(),
         Z.std(axis=0).ravel(),
-    ]).astype(np.float32))
+    ]).astype(np.float32), device=device)
     
     projector_mean_in = torch.as_tensor(np.hstack([
         X.mean(axis=0).ravel(),
-    ]).astype(np.float32))
+    ]).astype(np.float32), device=device)
     
     projector_std_in = torch.as_tensor(np.hstack([
         X_scale.repeat(nfeatures),
-    ]).astype(np.float32))
+    ]).astype(np.float32), device=device)
     
     # Make networks
     
-    network_projector = Projector(nfeatures, nfeatures + nlatent)
+    network_projector = Projector(nfeatures, nfeatures + nlatent).to(device)
     print("Input size: ", nfeatures)
     print("Output size: ", nfeatures + nlatent)
     
@@ -113,9 +122,9 @@ if __name__ == '__main__':
             
             nearest = tree.query(Xhat, k=1, return_distance=False)[:,0]
             
-            Xgnd = torch.as_tensor(X[nearest])
-            Zgnd = torch.as_tensor(Z[nearest])
-            Xhat = torch.as_tensor(Xhat)
+            Xgnd = torch.as_tensor(X[nearest], device=device)
+            Zgnd = torch.as_tensor(Z[nearest], device=device)
+            Xhat = torch.as_tensor(Xhat, device=device)
             
             # Project
             
@@ -192,9 +201,9 @@ if __name__ == '__main__':
         
         nearest = tree.query(Xhat, k=1, return_distance=False)[:,0]
         
-        Xgnd = torch.as_tensor(X[nearest])
-        Zgnd = torch.as_tensor(Z[nearest])
-        Xhat = torch.as_tensor(Xhat)
+        Xgnd = torch.as_tensor(X[nearest], device=device)
+        Zgnd = torch.as_tensor(Z[nearest], device=device)
+        Xhat = torch.as_tensor(Xhat, device=device)
         Dgnd = torch.sqrt(torch.sum(torch.square(Xhat - Xgnd), dim=-1))
         
         # Projector
@@ -227,10 +236,10 @@ if __name__ == '__main__':
         if i % 10 == 0:
             sys.stdout.write('\rIter: %7i Loss: %5.3f' % (i, rolling_loss))
         
-        if i % 1000 == 0:
+        if save_every > 0 and i % save_every == 0:
             generate_predictions()
-            save_onnx_network('./Models/projector.onnx', network_projector, projector_mean_in, projector_std_in, projector_mean_out, projector_std_out, torch.randn(1,1,nfeatures))
+            save_onnx_network('./Models/projector.onnx', network_projector, projector_mean_in, projector_std_in, projector_mean_out, projector_std_out, torch.randn(1,1,nfeatures, device=device))
             
-        if i % 1000 == 0:
+        if save_every > 0 and i % save_every == 0:
             scheduler.step()
             

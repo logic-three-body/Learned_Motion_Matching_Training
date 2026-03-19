@@ -1,6 +1,7 @@
 import importer
 import quat
 import numpy as np
+import os
 from scipy.interpolate import griddata
 import scipy.signal as signal
 import scipy.ndimage as ndimage
@@ -37,7 +38,9 @@ def saveAsBinary(filename, positions, rotations):
                 for k in range(4):
                     f.write(struct.pack("f", float(rotations[i, j, k])))
 
-binaries_path = '../Animations/LAFAN1BIN/'
+binaries_path = os.getenv('LMM_BIN_DIR', '../Animations/LAFAN1BIN/')
+if not binaries_path.endswith('/'):
+    binaries_path += '/'
 
 #files to create the database from, need to be preprocessed from the fbxtobinconverter
 
@@ -207,6 +210,8 @@ feature_scales = np.concatenate(feature_scales, axis=0).astype(np.float32).flatt
 """ Write Database """
 
 print("Writing Database...")
+
+os.makedirs('./Database', exist_ok=True)
 
 with open('./Database/database.bin', 'wb') as f:
     

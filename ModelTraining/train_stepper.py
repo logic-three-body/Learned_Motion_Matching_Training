@@ -1,4 +1,5 @@
 import sys
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -44,16 +45,24 @@ if __name__ == '__main__':
     
     # Parameters
     
-    seed = 1234
-    batchsize = 32
-    lr = 0.001
-    niter = 500000
-    window = 20
-    dt = 1.0 / 60.0
+    seed = int(os.getenv('LMM_SEED', '1234'))
+    batchsize = int(os.getenv('LMM_BATCHSIZE', '32'))
+    lr = float(os.getenv('LMM_LR', '0.001'))
+    niter = int(os.getenv('LMM_NITER', os.getenv('LMM_STEPPER_NITER', '500000')))
+    window = int(os.getenv('LMM_STEPPER_WINDOW', '20'))
+    dt = float(os.getenv('LMM_DT', str(1.0 / 60.0)))
+    nthreads = int(os.getenv('LMM_TORCH_THREADS', '1'))
+    save_every = int(os.getenv('LMM_SAVE_EVERY', '1000'))
+    device_name = os.getenv('LMM_DEVICE', 'cpu')
+    device = torch.device(device_name if (device_name.startswith('cuda') and torch.cuda.is_available()) else 'cpu')
     
     np.random.seed(seed)
     torch.manual_seed(seed)
-    torch.set_num_threads(1)
+    torch.set_num_threads(nthreads)
+    print('Device:', device)
+
+    os.makedirs('./Models', exist_ok=True)
+    os.makedirs('./Misc', exist_ok=True)
     
     # Compute means/stds
     
@@ -63,31 +72,31 @@ if __name__ == '__main__':
     stepper_mean_out = torch.as_tensor(np.hstack([
         ((X[1:] - X[:-1]) / dt).mean(axis=0).ravel(),
         ((Z[1:] - Z[:-1]) / dt).mean(axis=0).ravel(),
-    ]).astype(np.float32))
+    ]).astype(np.float32), device=device)
     
     stepper_std_out = torch.as_tensor(np.hstack([
         ((X[1:] - X[:-1]) / dt).std(axis=0).ravel(),
         ((Z[1:] - Z[:-1]) / dt).std(axis=0).ravel(),
-    ]).astype(np.float32))
+    ]).astype(np.float32), device=device)
     
     stepper_mean_in = torch.as_tensor(np.hstack([
         X.mean(axis=0).ravel(),
         Z.mean(axis=0).ravel(),
-    ]).astype(np.float32))
+    ]).astype(np.float32), device=device)
     
     stepper_std_in = torch.as_tensor(np.hstack([
         X_scale.repeat(nfeatures),
         Z_scale.repeat(nlatent),
-    ]).astype(np.float32))
+    ]).astype(np.float32), device=device)
     
     # Make PyTorch tensors
     
-    X = torch.as_tensor(X)
-    Z = torch.as_tensor(Z)
+    X = torch.as_tensor(X, device=device)
+    Z = torch.as_tensor(Z, device=device)
     
     # Make networks
     
-    network_stepper = Stepper(nfeatures + nlatent)
+    network_stepper = Stepper(nfeatures + nlatent).to(device)
     
     # Function to generate test predictions
     
@@ -165,7 +174,7 @@ if __name__ == '__main__':
     indices = []
     for i in range(nframes - window):
         indices.append(np.arange(i, i + window))
-    indices = torch.as_tensor(np.array(indices), dtype=torch.long)
+    indices = torch.as_tensor(np.array(indices), dtype=torch.long, device=device)
     
     # Train
 
@@ -239,10 +248,10 @@ if __name__ == '__main__':
         if i % 10 == 0:
             sys.stdout.write('\rIter: %7i Loss: %5.3f' % (i, rolling_loss))
         
-        if i % 1000 == 0:
+        if save_every > 0 and i % save_every == 0:
             generate_predictions()
-            save_onnx_network('./Models/stepper.onnx', network_stepper, stepper_mean_in, stepper_std_in, stepper_mean_out, stepper_std_out, torch.randn(1,nfeatures+nlatent))
+            save_onnx_network('./Models/stepper.onnx', network_stepper, stepper_mean_in, stepper_std_in, stepper_mean_out, stepper_std_out, torch.randn(1,nfeatures+nlatent, device=device))
             
-        if i % 1000 == 0:
+        if save_every > 0 and i % save_every == 0:
             scheduler.step()
             

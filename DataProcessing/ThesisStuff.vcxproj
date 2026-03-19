@@ -71,6 +71,10 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <FBXSDK_INCLUDE_DIR Condition="'$(FBXSDK_INCLUDE_DIR)'==''">$(FBXSDK_ROOT)\include</FBXSDK_INCLUDE_DIR>
+    <FBXSDK_LIB_DIR Condition="'$(FBXSDK_LIB_DIR)'==''">$(FBXSDK_ROOT)\lib\vs2022\x64\debug</FBXSDK_LIB_DIR>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -105,13 +109,13 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>FBXSDK_SHARED;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\Users\HOW TO SPOON\source\repos\ThesisStuff\FBXSDK\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(FBXSDK_INCLUDE_DIR);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>C:\Users\HOW TO SPOON\source\repos\ThesisStuff\FBXSDK\lib\vs2022\x64\debug</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(FBXSDK_LIB_DIR);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>libfbxsdk.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
       <IgnoreSpecificDefaultLibraries>
       </IgnoreSpecificDefaultLibraries>
