@@ -1,0 +1,3 @@
+[submodule "Learned_Motion_Matching_UE5"]
+	path = Learned_Motion_Matching_UE5
+	url = git@github.com:logic-three-body/Learned_Motion_Matching_UE5.git
