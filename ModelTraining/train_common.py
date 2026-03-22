@@ -133,5 +133,4 @@ def save_std_mean(filename, mean_in, std_in, mean_out, std_out):
 
 def save_onnx_network(filename, model, mean_in, std_in, mean_out, std_out, sample_input):
     model = ONNXModel(model, mean_in, std_in, mean_out, std_out)
-    torch.onnx.export(model, sample_input, filename, verbose=False)
-    
+    torch.onnx.export(model, sample_input, filename, verbose=False, external_data=False)
